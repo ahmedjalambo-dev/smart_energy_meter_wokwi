@@ -1,15 +1,16 @@
+// Smart Energy Meter with Firebase Integration
 #include <WiFi.h>
 #include <FirebaseESP32.h>
 #include <LiquidCrystal_I2C.h>
 #include "RTClib.h"
 
-// Configuration
+// Firebase Configuration
 #define API_KEY "AIzaSyDrSS7eDfPxqKrNkx5s8mr4X6T5ZQRELWk"
 #define DATABASE_URL "https://smart-energy-meter-73045-default-rtdb.europe-west1.firebasedatabase.app/"
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASSWORD = "";
 
-// Constants
+// System Constants
 const float VOLTAGE = 220.0, OVERDRAWN_THRESHOLD = 10.0;
 const float SPIKE_THRESHOLD = 1.5;
 const int POT_PIN = 34, LED_GREEN_PIN = 13, LED_RED_PIN = 12, BUZZER_PIN = 5;
@@ -18,14 +19,14 @@ const unsigned long MAIN_LOOP_INTERVAL = 3000, FIREBASE_CHECK_INTERVAL = 3000;
 const unsigned long ALERT_TONE_INTERVAL = 40, ALERT_BEEP_DURATION = 200;
 const int ALERT_FREQUENCY = 800;
 
-// Objects
+// Hardware Objects
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 RTC_DS1307 rtc;
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-// Variables
+// Global Variables
 bool isLoadEnabled = true, lastButtonState = HIGH, isAlertToneActive = false;
 float previousPower = 0.0, totalEnergyKWh = 0.0;
 unsigned long lastMainLoopTime = 0, lastFirebaseCheckTime = 0, alertTimer = 0;
@@ -42,6 +43,7 @@ struct AlertState {
   }
 };
 
+// Initialize Firebase connection with retry logic
 void initializeFirebase() {
   Serial.println("🔥 Initializing Firebase...");
   config.database_url = DATABASE_URL;
@@ -62,6 +64,7 @@ void initializeFirebase() {
   Serial.println("⚠️ Firebase initialization failed. System will continue in offline mode.");
 }
 
+// Check for remote shutdown commands from Firebase
 void checkFirebaseShutdownCommand() {
   static unsigned long lastLogTime = 0;
   if (!Firebase.ready()) {
@@ -82,6 +85,7 @@ void checkFirebaseShutdownCommand() {
   }
 }
 
+// Upload sensor data and alerts to Firebase
 void uploadDataToFirebase(const SensorReading& reading, const AlertState& alerts) {
   static unsigned long lastOfflineLogTime = 0;
   if (WiFi.status() != WL_CONNECTED || !Firebase.ready()) {
@@ -113,6 +117,7 @@ void uploadDataToFirebase(const SensorReading& reading, const AlertState& alerts
   }
 }
 
+// Initialize all hardware pins and ADC settings
 void initializeHardware() {
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
@@ -126,6 +131,7 @@ void initializeHardware() {
   Serial.printf("🔧 Initial ADC test reading: %d\n", analogRead(POT_PIN));
 }
 
+// Handle emergency button press to toggle load
 void handleEmergencyButton() {
   int currentButtonState = digitalRead(EMERGENCY_BUTTON_PIN);
   if (currentButtonState == LOW && lastButtonState == HIGH) {
@@ -133,6 +139,7 @@ void handleEmergencyButton() {
     digitalWrite(RELAY_PIN, isLoadEnabled ? HIGH : LOW);
     Serial.printf("🔴 Emergency button pressed! Load %s\n", isLoadEnabled ? "ENABLED" : "DISABLED");
 
+    // Update Firebase if connected
     if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
       if (!Firebase.setBool(fbdo, "/LoadControl/isEnabled", !isLoadEnabled)) {
         Serial.printf("⚠️ Failed to update Firebase load control: %s\n", fbdo.errorReason().c_str());
@@ -142,6 +149,7 @@ void handleEmergencyButton() {
   lastButtonState = currentButtonState;
 }
 
+// Control LEDs and buzzer based on alert conditions
 void controlAlerts(const AlertState& alerts) {
   digitalWrite(LED_RED_PIN, alerts.hasAnyAlert() ? HIGH : LOW);
   digitalWrite(LED_GREEN_PIN, alerts.hasAnyAlert() ? LOW : HIGH);
@@ -150,7 +158,6 @@ void controlAlerts(const AlertState& alerts) {
     if (millis() - alertTimer > ALERT_TONE_INTERVAL) {
       isAlertToneActive = !isAlertToneActive;
       if (isAlertToneActive) tone(BUZZER_PIN, ALERT_FREQUENCY, ALERT_BEEP_DURATION);
-      // if (isAlertToneActive) tone(BUZZER_PIN, ALERT_FREQUENCY);
       alertTimer = millis();
     }
   } else {
@@ -159,6 +166,7 @@ void controlAlerts(const AlertState& alerts) {
   }
 }
 
+// Read sensor and calculate power values
 SensorReading takeSensorReading() {
   DateTime now = rtc.now();
   unsigned long long timestamp = (now.unixtime()) * 1000ULL;
@@ -172,6 +180,7 @@ SensorReading takeSensorReading() {
   return {current, power, totalEnergyKWh, timestamp};
 }
 
+// Check for overcurrent and power spike alerts
 AlertState checkAlertConditions(const SensorReading& reading) {
   AlertState alerts = {false, false};
 
@@ -187,12 +196,14 @@ AlertState checkAlertConditions(const SensorReading& reading) {
   return alerts;
 }
 
+// Update LCD with current readings
 void updateLCDDisplay(const SensorReading& reading) {
   lcd.setCursor(0, 1); lcd.print("Current:"); lcd.print(reading.current, 1); lcd.print("A");
   lcd.setCursor(0, 2); lcd.print("Power:"); lcd.print(reading.power, 2); lcd.print("W");
   lcd.setCursor(0, 3); lcd.print("Energy:"); lcd.print(reading.energyKWh, 3); lcd.print("kWh");
 }
 
+// Print status to serial monitor
 void printStatus(const SensorReading& reading) {
   DateTime now = rtc.now();
   Serial.printf("Time: %d/%d/%d %d:%d:%d | Current: %.1fA, Power: %.0fW, Energy: %.3fkWh\n",
@@ -203,11 +214,13 @@ void printStatus(const SensorReading& reading) {
 void setup() {
   Serial.begin(115200);
 
+  // Initialize RTC
   if (!rtc.begin()) {
     Serial.println("Couldn't find RTC");
     abort();
   }
 
+  // Connect to WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
@@ -216,6 +229,7 @@ void setup() {
   }
   Serial.println("\nWiFi connected! IP: " + WiFi.localIP().toString());
 
+  // Initialize LCD and hardware
   lcd.init(); lcd.backlight(); lcd.setCursor(0, 0); lcd.print("Smart Energy Meter");
   initializeHardware();
 
@@ -228,11 +242,13 @@ void loop() {
 
   handleEmergencyButton();
 
+  // Check Firebase commands every 3 seconds
   if (millis() - lastFirebaseCheckTime >= FIREBASE_CHECK_INTERVAL) {
     lastFirebaseCheckTime = millis();
     if (WiFi.status() == WL_CONNECTED && Firebase.ready()) checkFirebaseShutdownCommand();
   }
 
+  // Main monitoring loop every 3 seconds
   if (millis() - lastMainLoopTime >= MAIN_LOOP_INTERVAL) {
     lastMainLoopTime = millis();
 
