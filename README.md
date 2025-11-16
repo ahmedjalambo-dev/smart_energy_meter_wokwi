@@ -9,7 +9,7 @@ This device monitors simulated electricity usage, calculates power and energy co
 This project can be run directly on Wokwi:
 **Wokwi Project Link:** `https://wokwi.com/projects/437696214065838081`
 
-<img width="1397" height="618" alt="image" src="https://github.com/user-attachments/assets/69491292-5c68-450b-ac62-176d8843e730" />
+<img width="822" height="363" alt="image" src="https://github.com/user-attachments/assets/9b147f22-947a-4135-bae2-cae646087fe0" />
 
 
 ### ⚡ Features
